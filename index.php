@@ -7,32 +7,88 @@ class VKParser {
         $this->access_token = $access_token;
     }
 
-    public function getUserInfo($user_id) {
-        $params = [
-            'user_ids' => $user_id,
-            'fields' => implode(',', [
-                'photo_max_orig',          // аватар (максимальный размер)
-                'status',                  // статус
-                'bdate',                   // дата рождения
-                'relation',                // семейное положение
-                'city',                    // город
-                'career,education',        // место работы/учебы
-                'site',                   // сайт
-                'personal,contacts',      // личная и контактная информация
-                'interests,music,movies,tv,books,games' // интересы
-            ]),
+
+    private function Getparams($type_req, $id_param = 0, $full_name = '', $day = 0, $month = 0, $year = 0)
+    {
+        // Базовые параметры для всех запросов
+        $base_params = [
             'access_token' => $this->access_token,
-            'v' => $this->v
+            'v' => $this->v,
+            'fields' => implode(',', [
+                'photo_max_orig',
+                'status',
+                'bdate',
+                'relation',
+                'city',
+                'career,education',
+                'site',
+                'personal,contacts',
+                'interests,music,movies,tv,books,games',
+                'can_access_closed', // Добавляем проверку приватности
+                'is_closed'          // Добавляем проверку приватности
+            ])
         ];
-        $url = 'https://api.vk.com/method/users.get?' . http_build_query($params);
-        $response = file_get_contents($url);
-        $data = json_decode($response, true);
-        if (empty($data['response'][0])) {
+
+        if ($type_req == 1) {
+            return array_merge($base_params, [
+                'phone' =>$id_param,
+                'count' => 1
+            ]);
+        }
+        elseif ($type_req == 2) {
+            $params = [
+                'q' => trim($full_name),
+                'count' => 1,
+                'sort' => 1
+            ];
+            if ($day > 0 && $month > 0 && $year > 0) {
+                $params['birth_day'] = (int)$day;
+                $params['birth_month'] = (int)$month;
+                $params['birth_year'] = (int)$year;
+            }
+
+            return array_merge($base_params, $params);
+        }
+        elseif ($type_req == 3) {
+            return array_merge($base_params, [
+                'user_ids' => $id_param
+            ]);
+        }
+
+        throw new InvalidArgumentException("Неверный тип запроса");
+    }
+    public function getUserInfo(int $typeReq, $userId = 0, string $fullName = '', int $day = 0, int $month = 0, int $year = 0): ?array
+    {
+        try {
+            $params = $this->getParams($typeReq, $userId, $fullName, $day, $month, $year);
+            $method = ($typeReq != 3) ? 'users.search' : 'users.get';
+
+            $url = "https://api.vk.com/method/{$method}?" . http_build_query($params);
+            $response = file_get_contents($url);
+            if ($response === false) {
+                throw new RuntimeException("Ошибка при запросе к API VK");
+            }
+            $data = json_decode($response, true);
+            if (isset($data['error'])) {
+                throw new RuntimeException("VK API Error: {$data['error']['error_msg']}");
+            }
+
+            if (empty($data['response']['items'][0]) and empty($data['response'][0])) {
+                return null;
+            }
+            $user = ($typeReq != 3 ) ? $data['response']['items'][0] : $data['response'][0];
+            return $this->formatUserData($user);
+
+        } catch (Exception $e) {
+            error_log("Error: " . $e->getMessage());
             return null;
         }
-        $user = $data['response'][0];
+    }
+
+    private function formatUserData(array $user): array
+    {
         $result = [
-            'ФИО' => trim($user['first_name'] . ' ' . $user['last_name']),
+            'ФИО' => trim(($user['first_name'] ?? '') . ' ' . ($user['last_name'] ?? '')),
             'Аватар' => $user['photo_max_orig'] ?? null,
             'Статус' => $user['status'] ?? null,
             'ДР' => $user['bdate'] ?? null,
@@ -45,10 +101,12 @@ class VKParser {
             'Интересы' => $this->getInterestsInfo($user)
         ];
 
-        $result['Друзья'] = $this->getFriends($user['id']);
-        $result['Подписчики'] = $this->getFollowers($user['id']);
-        $result['Подписки'] = $this->getSubscriptions($user['id']);
-        $result['Сообщества'] = $this->getGroups($user['id']);
+        if (!empty($user['id'])) {
+            $result['Друзья'] = $this->getFriends($user['id']);
+            $result['Подписчики'] = $this->getFollowers($user['id']);
+            $result['Подписки'] = $this->getSubscriptions($user['id']);
+            $result['Сообщества'] = $this->getGroups($user['id']);
+        }
 
         return $result;
     }
@@ -299,8 +357,8 @@ class VKParser {
 // Как использовать ?
 $access_token = ''; // Здесь надо поменять на ваш Access token :)
 $parser = new VKParser($access_token);
-$user = $parser->getUserInfo('vrovda'); // поиск по никнейму
-echo '<pre>';
-print_r($user);
+$userInfo = $parser->getUserInfo(2, 0, 'Ровда Владимир', 1,10,2005);
+;echo '<pre>';
+print_r($userInfo);
 echo '</pre>';
 ?>
