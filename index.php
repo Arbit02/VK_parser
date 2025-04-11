@@ -24,8 +24,8 @@ class VKParser {
                 'site',
                 'personal,contacts',
                 'interests,music,movies,tv,books,games',
-                'can_access_closed', // Добавляем проверку приватности
-                'is_closed'          // Добавляем проверку приватности
+                'can_access_closed',
+                'is_closed'         
             ])
         ];
 
